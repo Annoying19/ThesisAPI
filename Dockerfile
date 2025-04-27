@@ -18,4 +18,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV PORT 8080
 
 # Run the app with gunicorn
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "main:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "300", "main:app"]
+
