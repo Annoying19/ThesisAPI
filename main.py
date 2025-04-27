@@ -121,20 +121,6 @@ def login():
 
     user = User.query.filter_by(username=username).first()
     if user and bcrypt.check_password_hash(user.password, password):
-        # ✅ Check if recommendations already exist
-        existing = RecommendationResult.query.filter_by(user_id=user.id).first()
-        print(existing)
-        if not existing:
-            def threaded_recommendation(uid):
-                with app.app_context():
-                    generate_recommendations(uid)
-            print(f"🟢 NO EXISTING recommendations found for user {user.id}, triggering generation")
-            background_thread = threading.Thread(target=threaded_recommendation, args=(user.id,))
-            background_thread.start()
-
-            print(f"🔥 Background thread started for user {user.id}")
-        else:
-            print("EXISTING RECOMMENDATIONS")
         return jsonify({"message": "Login successful", "user_id": user.id}), 200
     else:
         return jsonify({"error": "Invalid username or password"}), 401
