@@ -89,21 +89,27 @@ def upload_images():
         print("❌ Upload Exception:", e)
         return jsonify({'error': str(e)}), 500
 
-
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
-    if not data or "username" not in data or "password" not in data:
+    if not data or "username" not in data or "password" not in data or "security_question" not in data or "security_answer" not in data:
         return jsonify({"error": "Missing required fields"}), 400
 
     username = data["username"]
     password = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
+    security_question = data["security_question"]
+    security_answer = data["security_answer"]
 
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "Username already exists"}), 400
 
-    new_user = User(username=username, password=password)
+    new_user = User(
+        username=username,
+        password=password,
+        security_question=security_question,
+        security_answer=security_answer
+    )
     db.session.add(new_user)
     db.session.commit()
 
@@ -137,6 +143,42 @@ def get_user_info():
 
     return jsonify({'username': user.username})
 
+@app.route("/get_security_question", methods=["POST"])
+def get_security_question():
+    data = request.get_json()
+    username = data.get("username")
+
+    if not username:
+        return jsonify({"error": "Missing username"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({"question": user.security_question}), 200
+
+
+@app.route("/reset_password", methods=["POST"])
+def reset_password():
+    data = request.get_json()
+    username = data.get("username")
+    answer = data.get("answer")
+    new_password = data.get("new_password")
+
+    if not username or not answer or not new_password:
+        return jsonify({"error": "Missing fields"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.security_answer.strip().lower() != answer.strip().lower():
+        return jsonify({"error": "Incorrect answer"}), 403
+
+    user.password = bcrypt.generate_password_hash(new_password).decode("utf-8")
+    db.session.commit()
+
+    return jsonify({"message": "Password reset successfully!"}), 200
 @app.route("/upload-multiple", methods=["POST"])
 def upload_multiple_images():
     try:
