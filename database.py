@@ -6,6 +6,8 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
+    security_question = db.Column(db.String(255), nullable=False)
+    security_answer = db.Column(db.String(255), nullable=False)
 
 class ImageModel(db.Model):
     id = db.Column(db.String(50), primary_key=True)
@@ -27,8 +29,8 @@ class Saved(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(100), nullable=False)
     event = db.Column(db.String(100), nullable=False)
-    outfit = db.Column(db.JSON, nullable=False)  # stores list of image relative paths like ['/uploads/img.jpg', ...]
-    clothes_ids = db.Column(db.JSON, nullable=False)  # stores list of image_ids like ['abc123', 'def456']
+    outfit = db.Column(db.JSON, nullable=False)
+    clothes_ids = db.Column(db.JSON, nullable=False)
 
     def to_dict(self):
         return {
@@ -37,7 +39,6 @@ class Saved(db.Model):
             'event': self.event,
             'outfit': self.outfit
         }
-
 
 class UploadedImage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
