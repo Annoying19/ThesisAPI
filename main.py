@@ -14,24 +14,18 @@ import pandas as pd
 from PIL import Image
 import json
 from event_predictor import predict_event_from_filenames
-# ✅ Initialize Flask App
-app = Flask(__name__)
-
+app = Flask(__name__, static_url_path='/uploads', static_folder='uploads')
 
 CORS(app)  # Enable CORS for React Native
 
 # ✅ Ensure Database & Uploads Folder Exists
 os.makedirs("assets", exist_ok=True)
-
+os.makedirs("uploads", exist_ok=True)
 
 # ✅ SQLite3 Database Configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = os.path.join(os.getcwd(), "uploads")
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
-
-
 
 
 # Load once globally or in your init
@@ -48,12 +42,18 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
+import io
+# UPLOADS IMAGES IN VSCode
 @app.route("/uploads/<filename>")
 def get_uploaded_file(filename):
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    upload_folder = app.config["UPLOAD_FOLDER"] # ADD BY AURELIA AND JOSEPH
+    file_path = os.path.join(upload_folder, filename)
+
     if not os.path.exists(file_path):
+        print(f"❌ File not found: {file_path}")
         return abort(404)
-    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    
+    return send_from_directory(upload_folder, filename)
 
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
@@ -149,80 +149,85 @@ def reset_password():
 @app.route("/upload-multiple", methods=["POST"])
 def upload_multiple_images():
     try:
-        # Validate inputs
         if "images" not in request.files or "user_id" not in request.form or "category" not in request.form:
             return jsonify({"error": "Missing required fields"}), 400
 
         user_id = int(request.form["user_id"])
         category = request.form["category"]
+
         user = db.session.get(User, user_id)
         if not user:
             return jsonify({"error": "Invalid user ID"}), 400
 
-        # Category code mapping
         category_prefix = {
-            "Tops": "TOP", "Bottoms": "BTM", "Shoes": "SHO",
-            "Outerwear": "OUT", "All-wear": "ALL",
-            "Accessories": "ACC", "Hats": "HAT", "Sunglasses": "SUN"
+            "Tops": "TOP",
+            "Bottoms": "BTM",
+            "Shoes": "SHO",
+            "Outerwear": "OUT",
+            "All-wear": "ALL",
+            "Accessories": "ACC",
+            "Hats": "HAT",
+            "Sunglasses": "SUN"
         }
+
         category_code = category_prefix.get(category, "GEN")
 
-        # Find next index for this user/category
-        existing = ImageModel.query.with_entities(ImageModel.id)\
-                                   .filter_by(user_id=user_id, category=category).all()
-        nums = []
-        for (eid,) in existing:
-            part = eid.split(category_code)[-1]
-            if part.isdigit(): nums.append(int(part))
-        start_num = max(nums, default=0) + 1
+        # Find max index used by this user in this category
+        existing_ids = ImageModel.query.with_entities(ImageModel.id)\
+                                       .filter_by(user_id=user_id, category=category).all()
+        existing_numbers = []
+        for (eid_str,) in existing_ids:
+            try:
+                num_part = eid_str.split(f"{category_code}")[-1]
+                if num_part.isdigit():
+                    existing_numbers.append(int(num_part))
+            except:
+                continue
+
+        start_number = max(existing_numbers, default=0) + 1
 
         uploaded_images = []
         images = request.files.getlist("images")
+        os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-        from io import BytesIO
-        
         for idx, image in enumerate(images):
-            # 1️⃣ Read the raw bytes once
-            data = image.read()
-            if len(data) < 1000:
-                return jsonify({"error": "Uploaded image is too small or empty."}), 400
-        
-            # 2️⃣ Build your filename & path
-            base = secure_filename(image.filename).rsplit('.', 1)[0]
-            filename = f"{uuid.uuid4().hex}_{base}.png"
+            unique_number = start_number + idx
+            image_id = f"U{user_id}_{category_code}{unique_number:02d}"
+
+            base_name = secure_filename(image.filename).rsplit('.', 1)[0]
+            filename = f"{uuid.uuid4().hex}_{base_name}.jpg"
             save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-        
-            # 3️⃣ Try converting & saving inside one block
-            try:
-                img = Image.open(BytesIO(data)).convert("RGB")
-                img.save(save_path, format="PNG")               # ← now always defined here
-                app.logger.debug("✅ Saved image to %s", save_path)
-            except Exception as e:
-                app.logger.error("❌ Image processing failed: %s", e)
-                return jsonify({"error": "Image processing failed."}), 500
-        
-            # 4️⃣ Only after a successful save do we record in the DB
+
+            image_bytes = image.read()
+            if len(image_bytes) < 1000:
+                return jsonify({"error": "Uploaded image is too small or empty."}), 400
+
+            # ✅ Save raw image bytes directly to preserve original content
+            with open(save_path, "wb") as f:
+                f.write(image_bytes)
+
             new_image = ImageModel(
-                id=f"U{user_id}_{category_code}{start_number + idx:02d}",
+                id=image_id,
                 image_path=filename,
                 category=category,
                 user_id=user_id
             )
             db.session.add(new_image)
             uploaded_images.append({
-                "image_id": new_image.id,
+                "image_id": image_id,
                 "image_path": f"{API_URL}/uploads/{filename}"
             })
 
 
+
         db.session.commit()
 
-        # Fire off background recommendation
         def run_with_context(uid):
             with app.app_context():
                 generate_recommendations(uid)
 
-        threading.Thread(target=run_with_context, args=(user_id,)).start()
+        background_thread = threading.Thread(target=run_with_context, args=(user_id,))
+        background_thread.start()
 
         return jsonify({
             "message": "Images uploaded successfully! Recommendations are being generated.",
@@ -230,8 +235,9 @@ def upload_multiple_images():
         }), 201
 
     except Exception as e:
-        print("❌ Flask Image Upload Error:", e)
-        return jsonify({"error": f"Internal Server Error: {e}"}), 500
+        print(f"❌ Flask Image Upload Error: {str(e)}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+
 
 
 import os, json
@@ -644,6 +650,13 @@ def fp_growth_saved():
     return jsonify({'frequent_itemsets': result})
 
 
+# Serve uploaded images
+@app.route('/uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+
 @app.route("/get_saved_outfits", methods=["GET"])
 def get_saved_outfits():
     user_id = request.args.get('user_id')
@@ -665,8 +678,6 @@ def get_saved_outfits():
         })
 
     return jsonify({'saved_outfits': response_data}), 200
-
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
