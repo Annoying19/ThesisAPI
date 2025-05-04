@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 import os
 import uuid
 import threading
-from database import db, ImageModel, RecommendationResult, User, Saved, UploadedImage
+from database import db, ImageModel, RecommendationResult, User, Saved, UploadedImage, GeneratedOutfit
 from recommend_outfits import generate_recommendations
 import json
 from mlxtend.frequent_patterns import fpgrowth, association_rules
@@ -197,19 +197,25 @@ def upload_multiple_images():
         for idx, image in enumerate(images):
             unique_number = start_number + idx
             image_id = f"U{user_id}_{category_code}{unique_number:02d}"
-
+        
             base_name = secure_filename(image.filename).rsplit('.', 1)[0]
-            filename = f"{uuid.uuid4().hex}_{base_name}.jpg"
+            filename = f"{uuid.uuid4().hex}_{base_name}.png"  # 🔁 Save as .png
             save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-
+        
             image_bytes = image.read()
             if len(image_bytes) < 1000:
                 return jsonify({"error": "Uploaded image is too small or empty."}), 400
-
-            # ✅ Save raw image bytes directly to preserve original content
-            with open(save_path, "wb") as f:
-                f.write(image_bytes)
-
+        
+            # ✅ Load as PIL Image and convert to RGB to preserve consistent pixel format
+            try:
+                from PIL import Image
+                from io import BytesIO
+                image_obj = Image.open(BytesIO(image_bytes)).convert("RGB")
+                image_obj.save(save_path, format="PNG")  # 🔁 Save as PNG (lossless)
+            except Exception as e:
+                print(f"❌ Failed to process image: {str(e)}")
+                return jsonify({"error": "Image processing failed."}), 500
+        
             new_image = ImageModel(
                 id=image_id,
                 image_path=filename,
@@ -221,7 +227,6 @@ def upload_multiple_images():
                 "image_id": image_id,
                 "image_path": f"{API_URL}/uploads/{filename}"
             })
-
 
 
         db.session.commit()
