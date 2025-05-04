@@ -4,7 +4,7 @@ import torch
 import gdown
 from torchvision import transforms
 from siamese_network import SiameseNetwork
-from database import db, ImageModel, RecommendationResult
+from database import db, ImageModel, RecommendationResult, GeneratedOutfit
 from tqdm import tqdm  # make sure you have tqdm installed
 from itertools import product, combinations
 from PIL import Image as PILImage, Image as PILRaw
