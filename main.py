@@ -179,45 +179,41 @@ def upload_multiple_images():
         uploaded_images = []
         images = request.files.getlist("images")
 
+        from io import BytesIO
+        
         for idx, image in enumerate(images):
-            unique_num = start_num + idx
-            image_id = f"U{user_id}_{category_code}{unique_num:02d}"
-
-            # Secure filename and build .png name
-            base = secure_filename(image.filename).rsplit('.', 1)[0]
-            filename = f"{uuid.uuid4().hex}_{base}.png"
-            save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-            img.save(save_path, format="PNG")
-
-
-            # Read & validate bytes
+            # 1️⃣ Read the raw bytes once
             data = image.read()
             if len(data) < 1000:
                 return jsonify({"error": "Uploaded image is too small or empty."}), 400
-
-            # Convert & save PNG via PIL
+        
+            # 2️⃣ Build your filename & path
+            base = secure_filename(image.filename).rsplit('.', 1)[0]
+            filename = f"{uuid.uuid4().hex}_{base}.png"
+            save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        
+            # 3️⃣ Try converting & saving inside one block
             try:
-                from io import BytesIO
                 img = Image.open(BytesIO(data)).convert("RGB")
-                img.save(save_path, format="PNG")
-                # Debug logs (optional)
-                print("✅ Saved to:", save_path)
+                img.save(save_path, format="PNG")               # ← now always defined here
+                app.logger.debug("✅ Saved image to %s", save_path)
             except Exception as e:
-                print("❌ PIL save failed:", e)
+                app.logger.error("❌ Image processing failed: %s", e)
                 return jsonify({"error": "Image processing failed."}), 500
-
-            # Persist in DB
+        
+            # 4️⃣ Only after a successful save do we record in the DB
             new_image = ImageModel(
-                id=image_id,
+                id=f"U{user_id}_{category_code}{start_number + idx:02d}",
                 image_path=filename,
                 category=category,
                 user_id=user_id
             )
             db.session.add(new_image)
             uploaded_images.append({
-                "image_id": image_id,
+                "image_id": new_image.id,
                 "image_path": f"{API_URL}/uploads/{filename}"
             })
+
 
         db.session.commit()
 
