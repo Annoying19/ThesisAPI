@@ -351,19 +351,6 @@ def get_images_by_category(category):
     
     return jsonify(image_list), 200
 
-
-
-# GETS ALL CLOTHINGS OF USER
-@app.route("/images/user/<user_id>", methods=["GET"])
-def get_user_images(user_id):
-    images = ImageModel.query.filter_by(user_id=user_id).all()  # Filter images by user_id
-    return jsonify([{
-        "id": img.id,
-        "image_path": f"{API_URL}/uploads/{img.image_path}",
-        "category": img.category
-    } for img in images])
-
-@app.route("/recommend", methods=["POST"])
 @app.route("/recommend", methods=["POST"])
 def recommend_outfit():
     try:
