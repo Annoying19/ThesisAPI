@@ -1,8 +1,10 @@
 import torch
-from torchvision import transforms
+import numpy as np
+import torchvision.transforms as transforms
+import io
+import base64
 from PIL import Image as PILImage, Image as PILRaw
 import os
-import gdown
 from siamese_network import SiameseNetwork
 
 # ✅ Google Drive Model Setup
