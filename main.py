@@ -46,19 +46,6 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
-import io
-# UPLOADS IMAGES IN VSCode
-@app.route("/uploads/<filename>")
-def get_uploaded_file(filename):
-    upload_folder = app.config["UPLOAD_FOLDER"] # ADD BY AURELIA AND JOSEPH
-    file_path = os.path.join(upload_folder, filename)
-
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return abort(404)
-    
-    return send_from_directory(upload_folder, filename)
-
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
 def register():
@@ -545,7 +532,37 @@ def remove_outfit_by_id():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+# GETS THE CLOTHES BY CATEGORY
+@app.route("/images/<category>", methods=["GET"])
+def get_images_by_category(category):
+    user_id = request.args.get('user_id')  # Get user_id from query params
+    if not user_id:
+        return jsonify({'error': 'Missing user_id'}), 400
+    
+    # Filter images by category and user_id
+    images = ImageModel.query.filter_by(category=category, user_id=user_id).all()
 
+    # Format the response
+    image_list = [
+        {
+            "id": img.id,
+            "image_path": f"{API_URL}/uploads/{img.image_path}",
+            "category": img.category
+        }
+        for img in images
+    ]
+    
+    return jsonify(image_list), 200
+
+# GETS ALL CLOTHINGS OF USER
+@app.route("/images/user/<user_id>", methods=["GET"])
+def get_user_images(user_id):
+    images = ImageModel.query.filter_by(user_id=user_id).all()  # Filter images by user_id
+    return jsonify([{
+        "id": img.id,
+        "image_path": f"{API_URL}/uploads/{img.image_path}",
+        "category": img.category
+    } for img in images])
 
 
 @app.route('/fp_growth_saved', methods=['GET'])
