@@ -2,13 +2,13 @@ import os
 import json
 import torch
 import gdown
-from itertools import product
-from PIL import Image
 from torchvision import transforms
-from flask_sqlalchemy import SQLAlchemy
 from siamese_network import SiameseNetwork
 from database import db, ImageModel, RecommendationResult
 from tqdm import tqdm  # make sure you have tqdm installed
+from itertools import product, combinations
+from PIL import Image as PILImage, Image as PILRaw
+
 
 # ✅ Step 1: Download model if missing
 MODEL_PATH = "siamese_model.pt"
