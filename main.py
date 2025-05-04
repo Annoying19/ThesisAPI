@@ -46,6 +46,19 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
+import io
+# UPLOADS IMAGES IN VSCode
+@app.route("/uploads/<filename>")
+def get_uploaded_file(filename):
+    upload_folder = app.config["UPLOAD_FOLDER"] # ADD BY AURELIA AND JOSEPH
+    file_path = os.path.join(upload_folder, filename)
+
+    if not os.path.exists(file_path):
+        print(f"❌ File not found: {file_path}")
+        return abort(404)
+    
+    return send_from_directory(upload_folder, filename)
+
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
 def register():
@@ -351,6 +364,18 @@ def get_images_by_category(category):
     
     return jsonify(image_list), 200
 
+
+
+# GETS ALL CLOTHINGS OF USER
+@app.route("/images/user/<user_id>", methods=["GET"])
+def get_user_images(user_id):
+    images = ImageModel.query.filter_by(user_id=user_id).all()  # Filter images by user_id
+    return jsonify([{
+        "id": img.id,
+        "image_path": f"{API_URL}/uploads/{img.image_path}",
+        "category": img.category
+    } for img in images])
+
 @app.route("/recommend", methods=["POST"])
 def recommend_outfit():
     try:
@@ -434,19 +459,11 @@ def recommend_outfit():
         for outfit in filtered_outfits:
             outfit["boost_score"] = boost_score(outfit["raw_filenames"])
 
-        # 4️⃣ Merge and Deduplicate
-        seen = set()
-        combined = []
+        # 4️⃣ Merge results
+        combined = filtered_outfits + frequent_event_outfits
+        combined.sort(key=lambda x: (x["boost_score"], x["match_score"]), reverse=True)
 
-        all_results = filtered_outfits + frequent_event_outfits
-        all_results.sort(key=lambda x: (x["boost_score"], x["match_score"]), reverse=True)
-
-        for item in all_results:
-            key = tuple(sorted(item["raw_filenames"]))
-            if key not in seen:
-                seen.add(key)
-                combined.append(item)
-
+        # Return empty results with 200 if no matches
         if not combined:
             return jsonify({
                 "event": event,
@@ -461,6 +478,45 @@ def recommend_outfit():
     except Exception as e:
         print(f"❌ Recommend API Error: {str(e)}")
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+
+    
+@app.route('/classify_event', methods=['POST'])
+def classify_event():
+    image_files = request.files.getlist('images')
+    categories = request.form.getlist('categories')
+
+    if len(image_files) != len(categories):
+        return jsonify({'error': 'Mismatch between images and categories'}), 400
+
+    image_file_list_with_categories = list(zip(categories, image_files))
+
+    saved_filenames = []
+
+    for category, file in image_file_list_with_categories:
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+        safe_category = category.replace("/", "-")  # or replace with "_"
+        filename = f"{safe_category}_{uuid.uuid4().hex[:8]}.{ext}"
+
+        save_path = os.path.join("uploads", filename)
+
+        file.save(save_path)
+
+        # 🧠 Save to DB
+        img_record = UploadedImage(category=category, filename=filename)
+        db.session.add(img_record)
+        saved_filenames.append((category, filename))
+
+    db.session.commit()
+
+    print("\n✅ Saved images to DB:", saved_filenames)
+
+    try:
+        result = predict_event_from_filenames(saved_filenames)
+        return jsonify(result)
+    except Exception as e:
+        print("❌ Internal error:", e)
+        return jsonify({'error': str(e)}), 500
+
 
 
 @app.route('/save_outfit', methods=['POST'])
@@ -519,15 +575,7 @@ def remove_outfit_by_id():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# GETS ALL CLOTHINGS OF USER
-@app.route("/images/user/<user_id>", methods=["GET"])
-def get_user_images(user_id):
-    images = ImageModel.query.filter_by(user_id=user_id).all()  # Filter images by user_id
-    return jsonify([{
-        "id": img.id,
-        "image_path": f"{API_URL}/uploads/{img.image_path}",
-        "category": img.category
-    } for img in images])
+
 
 
 @app.route('/fp_growth_saved', methods=['GET'])
@@ -606,56 +654,10 @@ def fp_growth_saved():
     return jsonify({'frequent_itemsets': result})
 
 
-
-@app.route('/classify_event', methods=['POST'])
-def classify_event():
-    image_files = request.files.getlist('images')
-    categories = request.form.getlist('categories')
-
-    if len(image_files) != len(categories):
-        return jsonify({'error': 'Mismatch between images and categories'}), 400
-
-    image_file_list_with_categories = list(zip(categories, image_files))
-
-    saved_filenames = []
-
-    for category, file in image_file_list_with_categories:
-        ext = file.filename.rsplit('.', 1)[-1].lower()
-        safe_category = category.replace("/", "-")  # or replace with "_"
-        filename = f"{safe_category}_{uuid.uuid4().hex[:8]}.{ext}"
-
-        save_path = os.path.join("uploads", filename)
-
-        file.save(save_path)
-
-        # 🧠 Save to DB
-        img_record = UploadedImage(category=category, filename=filename)
-        db.session.add(img_record)
-        saved_filenames.append((category, filename))
-
-    db.session.commit()
-
-    print("\n✅ Saved images to DB:", saved_filenames)
-
-    try:
-        result = predict_event_from_filenames(saved_filenames)
-        return jsonify(result)
-    except Exception as e:
-        print("❌ Internal error:", e)
-        return jsonify({'error': str(e)}), 500
-
 # Serve uploaded images
 @app.route('/uploads/<path:filename>')
 def serve_uploaded_file(filename):
-    full_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    print(f"📦 Serving file from: {full_path}")
-    if not os.path.exists(full_path):
-        print(f"❌ File not found at {full_path}")
-        return abort(404)
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-
-
 
 @app.route("/get_saved_outfits", methods=["GET"])
 def get_saved_outfits():
@@ -678,6 +680,7 @@ def get_saved_outfits():
         })
 
     return jsonify({'saved_outfits': response_data}), 200
+
 
 
 if __name__ == "__main__":
