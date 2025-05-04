@@ -26,7 +26,9 @@ os.makedirs("uploads", exist_ok=True)
 # ✅ SQLite3 Database Configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["UPLOAD_FOLDER"] = os.path.join(os.getcwd(), "uploads")
+app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
 
 
 # Load once globally or in your init
