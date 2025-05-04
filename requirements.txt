@@ -12,3 +12,7 @@ tqdm==4.66.1
 torch
 torchvision
 gdown
+
+# 🧠 Add these:
+Werkzeug==2.3.6              # used in image upload (secure_filename)
+python-dotenv==1.0.0         # if you’re using environment variables
