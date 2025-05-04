@@ -532,28 +532,6 @@ def remove_outfit_by_id():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# GETS THE CLOTHES BY CATEGORY
-@app.route("/images/<category>", methods=["GET"])
-def get_images_by_category(category):
-    user_id = request.args.get('user_id')  # Get user_id from query params
-    if not user_id:
-        return jsonify({'error': 'Missing user_id'}), 400
-    
-    # Filter images by category and user_id
-    images = ImageModel.query.filter_by(category=category, user_id=user_id).all()
-
-    # Format the response
-    image_list = [
-        {
-            "id": img.id,
-            "image_path": f"{API_URL}/uploads/{img.image_path}",
-            "category": img.category
-        }
-        for img in images
-    ]
-    
-    return jsonify(image_list), 200
-
 # GETS ALL CLOTHINGS OF USER
 @app.route("/images/user/<user_id>", methods=["GET"])
 def get_user_images(user_id):
