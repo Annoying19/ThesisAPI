@@ -57,38 +57,6 @@ def get_uploaded_file(filename):
     
     return send_from_directory(upload_folder, filename)
 
-# UPLOADS IMAGES 
-@app.route('/upload', methods=['POST'])
-def upload_images():
-    try:
-        user_id = request.form.get('user_id')
-        category = request.form.get('category')
-        image = request.files.get('image')
-
-        if not user_id or not image or not category:
-            return jsonify({'error': 'Missing data'}), 400
-
-        # Ensure uploads folder exists
-        os.makedirs('uploads', exist_ok=True)
-
-        filename = secure_filename(image.filename)
-        save_path = os.path.join('uploads', filename)
-        image.save(save_path)
-
-        new_image = ImageModel(
-            user_id=user_id,
-            category=category,
-            image_path=f"/uploads/{filename}"
-        )
-        db.session.add(new_image)
-        db.session.commit()
-
-        return jsonify({'success': True}), 200
-
-    except Exception as e:
-        print("❌ Upload Exception:", e)
-        return jsonify({'error': str(e)}), 500
-
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
 def register():
@@ -179,6 +147,7 @@ def reset_password():
     db.session.commit()
 
     return jsonify({"message": "Password reset successfully!"}), 200
+
 @app.route("/upload-multiple", methods=["POST"])
 def upload_multiple_images():
     try:
@@ -235,15 +204,9 @@ def upload_multiple_images():
             if len(image_bytes) < 1000:
                 return jsonify({"error": "Uploaded image is too small or empty."}), 400
 
-            input_image = Image.open(io.BytesIO(image_bytes))
-            input_image.verify()
-
-            input_image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-            output_image = remove(input_image)
-
-            white_bg = Image.new("RGB", output_image.size, (255, 255, 255))
-            white_bg.paste(output_image, mask=output_image.split()[3])
-            white_bg.save(save_path, format="JPEG")
+            # ✅ Save raw image bytes directly to preserve original content
+            with open(save_path, "wb") as f:
+                f.write(image_bytes)
 
             new_image = ImageModel(
                 id=image_id,
@@ -258,7 +221,9 @@ def upload_multiple_images():
             })
 
 
+
         db.session.commit()
+
         def run_with_context(uid):
             with app.app_context():
                 generate_recommendations(uid)
@@ -267,7 +232,7 @@ def upload_multiple_images():
         background_thread.start()
 
         return jsonify({
-            "message": "Images uploaded successfully! Background removed and recommendations are being generated.",
+            "message": "Images uploaded successfully! Recommendations are being generated.",
             "images": uploaded_images
         }), 201
 
@@ -410,6 +375,7 @@ def get_user_images(user_id):
     } for img in images])
 
 @app.route("/recommend", methods=["POST"])
+@app.route("/recommend", methods=["POST"])
 def recommend_outfit():
     try:
         data = request.get_json()
@@ -492,11 +458,19 @@ def recommend_outfit():
         for outfit in filtered_outfits:
             outfit["boost_score"] = boost_score(outfit["raw_filenames"])
 
-        # 4️⃣ Merge results
-        combined = filtered_outfits + frequent_event_outfits
-        combined.sort(key=lambda x: (x["boost_score"], x["match_score"]), reverse=True)
+        # 4️⃣ Merge and Deduplicate
+        seen = set()
+        combined = []
 
-        # Return empty results with 200 if no matches
+        all_results = filtered_outfits + frequent_event_outfits
+        all_results.sort(key=lambda x: (x["boost_score"], x["match_score"]), reverse=True)
+
+        for item in all_results:
+            key = tuple(sorted(item["raw_filenames"]))
+            if key not in seen:
+                seen.add(key)
+                combined.append(item)
+
         if not combined:
             return jsonify({
                 "event": event,
@@ -511,45 +485,6 @@ def recommend_outfit():
     except Exception as e:
         print(f"❌ Recommend API Error: {str(e)}")
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
-
-    
-@app.route('/classify_event', methods=['POST'])
-def classify_event():
-    image_files = request.files.getlist('images')
-    categories = request.form.getlist('categories')
-
-    if len(image_files) != len(categories):
-        return jsonify({'error': 'Mismatch between images and categories'}), 400
-
-    image_file_list_with_categories = list(zip(categories, image_files))
-
-    saved_filenames = []
-
-    for category, file in image_file_list_with_categories:
-        ext = file.filename.rsplit('.', 1)[-1].lower()
-        safe_category = category.replace("/", "-")  # or replace with "_"
-        filename = f"{safe_category}_{uuid.uuid4().hex[:8]}.{ext}"
-
-        save_path = os.path.join("uploads", filename)
-
-        file.save(save_path)
-
-        # 🧠 Save to DB
-        img_record = UploadedImage(category=category, filename=filename)
-        db.session.add(img_record)
-        saved_filenames.append((category, filename))
-
-    db.session.commit()
-
-    print("\n✅ Saved images to DB:", saved_filenames)
-
-    try:
-        result = predict_event_from_filenames(saved_filenames)
-        return jsonify(result)
-    except Exception as e:
-        print("❌ Internal error:", e)
-        return jsonify({'error': str(e)}), 500
-
 
 
 @app.route('/save_outfit', methods=['POST'])
@@ -715,7 +650,6 @@ def get_saved_outfits():
         })
 
     return jsonify({'saved_outfits': response_data}), 200
-
 
 
 if __name__ == "__main__":
