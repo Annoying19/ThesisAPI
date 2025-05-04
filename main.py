@@ -27,7 +27,7 @@ os.makedirs("uploads", exist_ok=True)
 # ✅ SQLite3 Database Configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
+app.config["UPLOAD_FOLDER"] = os.path.join(os.getcwd(), "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 
@@ -666,11 +666,6 @@ def fp_growth_saved():
 
     return jsonify({'frequent_itemsets': result})
 
-
-# Serve uploaded images
-@app.route('/uploads/<path:filename>')
-def serve_uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route("/get_saved_outfits", methods=["GET"])
 def get_saved_outfits():
