@@ -50,14 +50,13 @@ import io
 # UPLOADS IMAGES IN VSCode
 @app.route("/uploads/<filename>")
 def get_uploaded_file(filename):
-    upload_folder = app.config["UPLOAD_FOLDER"] # ADD BY AURELIA AND JOSEPH
-    file_path = os.path.join(upload_folder, filename)
-
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    print("Looking for file:", file_path)
     if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
+        print("❌ File not found!")
         return abort(404)
-    
-    return send_from_directory(upload_folder, filename)
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
 
 # REGISTERS USERS
 @app.route("/register", methods=["POST"])
@@ -212,6 +211,7 @@ def upload_multiple_images():
                 from io import BytesIO
                 image_obj = Image.open(BytesIO(image_bytes)).convert("RGB")
                 image_obj.save(save_path, format="PNG")  # 🔁 Save as PNG (lossless)
+                print("✅ Image saved at:", save_path)
             except Exception as e:
                 print(f"❌ Failed to process image: {str(e)}")
                 return jsonify({"error": "Image processing failed."}), 500
@@ -227,6 +227,7 @@ def upload_multiple_images():
                 "image_id": image_id,
                 "image_path": f"{API_URL}/uploads/{filename}"
             })
+
 
 
         db.session.commit()
