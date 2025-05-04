@@ -211,6 +211,13 @@ def upload_multiple_images():
                 from io import BytesIO
                 image_obj = Image.open(BytesIO(image_bytes)).convert("RGB")
                 image_obj.save(save_path, format="PNG")  # 🔁 Save as PNG (lossless)
+                # 🧪 Debug: Check if image is gray after saving
+                reloaded_img = Image.open(save_path).convert("RGB")
+                pixels = reloaded_img.getdata()
+                sample_pixels = list(pixels)[:10]  # Check the first 10 pixels
+                
+                print(f"✅ Image saved to: {save_path}")
+                print(f"🧪 Sample pixel values: {sample_pixels}")
                 print("✅ Image saved at:", save_path)
             except Exception as e:
                 print(f"❌ Failed to process image: {str(e)}")
