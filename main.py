@@ -27,9 +27,9 @@ os.makedirs("assets", exist_ok=True)
 # ✅ SQLite3 Database Configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-# Replace your existing UPLOAD_FOLDER config with this:
-app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
+app.config["UPLOAD_FOLDER"] = os.path.join(os.getcwd(), "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
 
 
 
@@ -187,6 +187,8 @@ def upload_multiple_images():
             base = secure_filename(image.filename).rsplit('.', 1)[0]
             filename = f"{uuid.uuid4().hex}_{base}.png"
             save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            img.save(save_path, format="PNG")
+
 
             # Read & validate bytes
             data = image.read()
