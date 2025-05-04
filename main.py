@@ -11,7 +11,6 @@ import json
 from mlxtend.frequent_patterns import fpgrowth, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 import pandas as pd
-from rembg import remove
 from PIL import Image
 import json
 from event_predictor import predict_event_from_filenames
