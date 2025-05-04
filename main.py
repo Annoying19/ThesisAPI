@@ -15,7 +15,8 @@ from PIL import Image
 import json
 from event_predictor import predict_event_from_filenames
 # ✅ Initialize Flask App
-app = Flask(__name__, static_url_path='/uploads', static_folder='uploads')
+app = Flask(__name__)
+
 
 CORS(app)  # Enable CORS for React Native
 
@@ -623,10 +624,54 @@ def fp_growth_saved():
     return jsonify({'frequent_itemsets': result})
 
 
+
+@app.route('/classify_event', methods=['POST'])
+def classify_event():
+    image_files = request.files.getlist('images')
+    categories = request.form.getlist('categories')
+
+    if len(image_files) != len(categories):
+        return jsonify({'error': 'Mismatch between images and categories'}), 400
+
+    image_file_list_with_categories = list(zip(categories, image_files))
+
+    saved_filenames = []
+
+    for category, file in image_file_list_with_categories:
+        ext = file.filename.rsplit('.', 1)[-1].lower()
+        safe_category = category.replace("/", "-")  # or replace with "_"
+        filename = f"{safe_category}_{uuid.uuid4().hex[:8]}.{ext}"
+
+        save_path = os.path.join("uploads", filename)
+
+        file.save(save_path)
+
+        # 🧠 Save to DB
+        img_record = UploadedImage(category=category, filename=filename)
+        db.session.add(img_record)
+        saved_filenames.append((category, filename))
+
+    db.session.commit()
+
+    print("\n✅ Saved images to DB:", saved_filenames)
+
+    try:
+        result = predict_event_from_filenames(saved_filenames)
+        return jsonify(result)
+    except Exception as e:
+        print("❌ Internal error:", e)
+        return jsonify({'error': str(e)}), 500
+
 # Serve uploaded images
 @app.route('/uploads/<path:filename>')
 def serve_uploaded_file(filename):
+    full_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    print(f"📦 Serving file from: {full_path}")
+    if not os.path.exists(full_path):
+        print(f"❌ File not found at {full_path}")
+        return abort(404)
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 
 
 
