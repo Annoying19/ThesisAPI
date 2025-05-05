@@ -7,6 +7,7 @@ from PIL import Image as PILImage, Image as PILRaw
 from siamese_network import SiameseNetwork
 from google.cloud import storage
 from google.oauth2 import service_account
+import gdown
 
 # === Google Cloud Storage Client ===
 SERVICE_ACCOUNT_PATH = os.path.join(
