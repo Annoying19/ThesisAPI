@@ -10,7 +10,6 @@ WORKDIR /app
 
 # Copy project files and the Google Cloud key
 COPY . .  
-COPY thesisapi-458811-982bb3fab395.json /app/thesisapi-458811-982bb3fab395.json
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
