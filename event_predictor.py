@@ -8,7 +8,20 @@ from siamese_network import SiameseNetwork
 from google.cloud import storage
 from google.oauth2 import service_account
 
+# === Google Cloud Storage Client ===
+SERVICE_ACCOUNT_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "thesisapi-458811-982bb3fab395.json"
+)
 
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_PATH
+)
+storage_client = storage.Client(
+    credentials=credentials,
+    project=credentials.project_id
+)
+gcs_bucket = storage_client.bucket("morphfit-thesis")
 # ✅ Google Drive Model Setup
 MODEL_PATH = "siamese_model.pt"
 GOOGLE_DRIVE_ID = "1b33sVOOrKvb7fFQieD-oMW7Q41hckbBD"  # Your model file ID
