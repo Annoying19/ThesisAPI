@@ -9,11 +9,7 @@ from google.cloud import storage
 from google.oauth2 import service_account
 import gdown
 
-# === Google Cloud Storage Client ===
-SERVICE_ACCOUNT_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "thesisapi-458811-982bb3fab395.json"
-)
+SERVICE_ACCOUNT_PATH = "/etc/secrets/morphfit-key"
 
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_PATH
