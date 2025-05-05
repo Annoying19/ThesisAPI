@@ -9,10 +9,13 @@ Pillow==10.2.0
 numpy==1.24.4
 scikit-learn==1.3.0
 tqdm==4.66.1
+
 torch
 torchvision
 gdown
 
-# 🧠 Add these:
-Werkzeug==2.3.6              # used in image upload (secure_filename)
-python-dotenv==1.0.0         # if you’re using environment variables
+google-cloud-storage>=2.0.0
+google-auth>=2.0.0
+# google-auth-oauthlib>=1.0.0   # optional, only if you do OAuth
+python-dotenv==1.0.0
+werkzeug==2.3.6
