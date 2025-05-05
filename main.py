@@ -24,8 +24,10 @@ CORS(app)  # Enable CORS for React Native
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# === Google Cloud Storage with explicit service account credentials ===
-SERVICE_ACCOUNT_PATH = r"app\thesisapi-458811-982bb3fab395.json"  # <-- update to your key path
+SERVICE_ACCOUNT_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "thesisapi-458811-982bb3fab395.json"
+)
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_PATH
 )
