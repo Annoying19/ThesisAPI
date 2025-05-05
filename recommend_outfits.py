@@ -1,14 +1,32 @@
 import os
 import json
 import torch
-import gdown
+from itertools import product, combinations
+from PIL import Image as PILImage
+from io import BytesIO
 from torchvision import transforms
+from flask_sqlalchemy import SQLAlchemy
 from siamese_network import SiameseNetwork
 from database import db, ImageModel, RecommendationResult, GeneratedOutfit
-from tqdm import tqdm  # make sure you have tqdm installed
-from itertools import product, combinations
-from PIL import Image as PILImage, Image as PILRaw
+from tqdm import tqdm
+from google.cloud import storage
+from google.oauth2 import service_account
 
+ === Google Cloud Storage Client ===
+
+SERVICE_ACCOUNT_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "thesisapi-458811-982bb3fab395.json"
+)
+
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_PATH
+)
+storage_client = storage.Client(
+    credentials=credentials,
+    project=credentials.project_id
+)
+gcs_bucket = storage_client.bucket("morphfit-thesis")
 
 # ✅ Step 1: Download model if missing
 MODEL_PATH = "siamese_model.pt"
@@ -33,17 +51,24 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
+
+EVENT_LABELS = [
+    "Job Interviews", "Birthday", "Graduations", "MET Gala", "Business Meeting",
+    "Beach", "Picnic", "Summer", "Funeral", "Romantic Dinner",
+    "Cold", "Casual", "Wedding"
+]
+
 def create_blank_tensor():
-    blank_image = PILRaw.new("RGB", (224, 224), (255, 255, 255))  # White blank PIL image
+    blank_image = PILImage.new("RGB", (224, 224), (255, 255, 255))
     tensor_img = transform(blank_image).unsqueeze(0).to(device)
     return tensor_img, blank_image
 
 
 def generate_recommendations(user_id):
-    """
-    Generate, predict, and save outfit combinations based on the user's uploaded images.
-    Save into RecommendationResult (prediction) and GeneratedOutfit (pure combinations).
-    """
     print(f"🔄 Generating outfit combinations for user: {user_id}")
 
     # 1️⃣ Fetch images and bucket by category
@@ -56,17 +81,12 @@ def generate_recommendations(user_id):
     bottoms = category_mapping.get("Bottoms", [])
     shoes = category_mapping.get("Shoes", [])
     allwear = category_mapping.get("All-wear", [])
-    optional_categories = {
-        k: v for k, v in category_mapping.items()
-        if k not in ["Tops", "Bottoms", "Shoes", "All-wear"]
-    }
+    optional_categories = {k: v for k, v in category_mapping.items() if k not in ["Tops", "Bottoms", "Shoes", "All-wear"]}
     optional_values = list(optional_categories.values())
 
     # 2️⃣ Build all raw combinations
     valid_combinations = []
-
     for r in range(2, 8):
-        # Flow 1: Tops + Bottoms + Shoes
         if tops and bottoms and shoes:
             base = [tops, bottoms, shoes]
             n = r - len(base)
@@ -74,10 +94,7 @@ def generate_recommendations(user_id):
                 valid_combinations += list(product(*base))
             elif n > 0:
                 for opt_comb in combinations(optional_values, n):
-                    slots = base + list(opt_comb)
-                    valid_combinations += list(product(*slots))
-
-        # Flow 2: All-wear + Shoes
+                    valid_combinations += list(product(* (base + list(opt_comb))))
         if allwear and shoes:
             base = [allwear, shoes]
             n = r - len(base)
@@ -85,86 +102,63 @@ def generate_recommendations(user_id):
                 valid_combinations += list(product(*base))
             elif n > 0:
                 for opt_comb in combinations(optional_values, n):
-                    slots = base + list(opt_comb)
-                    valid_combinations += list(product(*slots))
+                    valid_combinations += list(product(* (base + list(opt_comb))))
 
     if not valid_combinations:
         print("⚠️ No valid combinations found")
         return []
 
-    # 3️⃣ Filter combinations that mix All-wear + Outerwear
+    # 3️⃣ Filter out All-wear + Outerwear mixes
     allwear_set = set(category_mapping.get("All-wear", []))
     outerwear_set = set(category_mapping.get("Outerwear", []))
-
-    filtered_combinations = [
-        combo for combo in valid_combinations
-        if not (any(item in allwear_set for item in combo) and
-                any(item in outerwear_set for item in combo))
-    ]
-
+    filtered_combinations = [combo for combo in valid_combinations
+                              if not (any(i in allwear_set for i in combo) and any(i in outerwear_set for i in combo))]
     if not filtered_combinations:
         print("⚠️ All combinations with All-wear + Outerwear have been removed")
         return []
 
-    # 4️⃣ Predict and Save
     print(f"\n🧥 Generated {len(filtered_combinations)} outfit combinations:\n")
 
-    upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
-
-    for idx, combo in enumerate(tqdm(filtered_combinations, desc="🔍 Predicting outfits"), start=1):
+    # 🔄 Add tqdm progress bar for combinations
+    for combo in tqdm(filtered_combinations, desc="🔢 Predicting Outfits"):
         outfit_files = list(combo)
         category_filename_pairs = []
-
         for item in outfit_files:
-            found_category = next((cat for cat, items in category_mapping.items() if item in items), None)
-            if found_category:
-                mapped_cat = "All-body/Tops" if found_category in ["All-body", "Tops"] else found_category
+            cat_found = next((c for c, items in category_mapping.items() if item in items), None)
+            if cat_found:
+                mapped_cat = "All-body/Tops" if cat_found in ["All-body", "Tops"] else cat_found
                 category_filename_pairs.append((mapped_cat, item))
 
-        new_generated_outfit = GeneratedOutfit(
-            user_id=user_id,
-            outfit=json.dumps(outfit_files)
-        )
-        db.session.add(new_generated_outfit)
+        gen = GeneratedOutfit(user_id=user_id, outfit=json.dumps(outfit_files))
+        db.session.add(gen)
 
-        slot_order = [
-            "Hats", "Accessories", "Sunglasses",
-            "Outerwear", "All-body/Tops", "Bottoms", "Shoes"
-        ]
-        
-        CATEGORY_RENAME = {
-            "All-body": "All-body/Tops",
-            "Tops": "All-body/Tops",
-            "All-wear": "All-body/Tops"
-        }
+        slot_order = ["Hats","Accessories","Sunglasses","Outerwear","All-body/Tops","Bottoms","Shoes"]
+        CATEGORY_RENAME = {"All-body":"All-body/Tops","Tops":"All-body/Tops","All-wear":"All-body/Tops"}
 
-        category_slot_mapping = {}
-        for cat, fname in category_filename_pairs:
-            mapped_cat = CATEGORY_RENAME.get(cat, cat)
-            category_slot_mapping[mapped_cat] = fname
+        category_slot_mapping = {CATEGORY_RENAME.get(cat, cat): fname for cat, fname in category_filename_pairs}
 
         input_batch = []
-        for slot in slot_order:
+        for slot in tqdm(slot_order, desc="🧩 Loading Slots", leave=False):
             if slot in category_slot_mapping:
-                img_path = os.path.join(upload_dir, category_slot_mapping[slot])
-                img = PILImage.open(img_path).convert("RGB")
+                blob_name = category_slot_mapping[slot]
+                blob = gcs_bucket.blob(blob_name)
+                data = blob.download_as_bytes()
+                img = PILImage.open(BytesIO(data)).convert("RGB")
                 tensor_img = transform(img).unsqueeze(0).to(device)
                 input_batch.append(tensor_img)
             else:
                 blank_tensor, _ = create_blank_tensor()
                 input_batch.append(blank_tensor)
 
-        model.eval()
         with torch.no_grad():
             logits, *_ = model(*input_batch)
             probs = torch.softmax(logits[0], dim=0).cpu().numpy()
 
         scores_dict = {EVENT_LABELS[i]: float(probs[i]) for i in range(len(EVENT_LABELS))}
-        top_event_idx = probs.argmax()
-        top_event = EVENT_LABELS[top_event_idx]
-        top_score = float(probs[top_event_idx])
+        top_idx = int(probs.argmax())
+        top_event, top_score = EVENT_LABELS[top_idx], float(probs[top_idx])
 
-        result = RecommendationResult(
+        res = RecommendationResult(
             user_id=user_id,
             event=top_event,
             outfit=json.dumps(outfit_files),
@@ -172,9 +166,8 @@ def generate_recommendations(user_id):
             match_score=top_score,
             heatmap_paths="[]"
         )
-        db.session.add(result)
+        db.session.add(res)
 
     db.session.commit()
-    print(f"✅ Saved {len(filtered_combinations)} generated outfits and prediction results for user {user_id}.")
-
+    print(f"✅ Saved {len(filtered_combinations)} generated outfits and predictions for user {user_id}.")
     return filtered_combinations
