@@ -8,15 +8,18 @@ ENV PYTHONUNBUFFERED 1
 # Set working directory
 WORKDIR /app
 
-# Copy all project files into the container
-COPY . .
+# Copy project files and the Google Cloud key
+COPY . .  
+COPY thesisapi-458811-982bb3fab395.json /app/thesisapi-458811-982bb3fab395.json
 
-# Install Python dependencies
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port Google Cloud expects
+# Expose port for Cloud Run
 ENV PORT 8080
 
-# Run the app with gunicorn
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "600", "main:app"]
+# Set environment variable for GCS credentials
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/thesisapi-458811-982bb3fab395.json
 
+# Run with gunicorn
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "600", "main:app"]
