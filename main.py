@@ -24,10 +24,8 @@ CORS(app)  # Enable CORS for React Native
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.abspath("assets/database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-SERVICE_ACCOUNT_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "thesisapi-458811-982bb3fab395.json"
-)
+SERVICE_ACCOUNT_PATH = "/etc/secrets/morphfit-key"
+
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_PATH
 )
