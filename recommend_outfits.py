@@ -11,6 +11,7 @@ from database import db, ImageModel, RecommendationResult, GeneratedOutfit
 from tqdm import tqdm
 from google.cloud import storage
 from google.oauth2 import service_account
+import gdown
 
 SERVICE_ACCOUNT_PATH = os.path.join(
     os.path.dirname(__file__),
