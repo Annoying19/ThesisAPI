@@ -12,8 +12,6 @@ from tqdm import tqdm
 from google.cloud import storage
 from google.oauth2 import service_account
 
- === Google Cloud Storage Client ===
-
 SERVICE_ACCOUNT_PATH = os.path.join(
     os.path.dirname(__file__),
     "thesisapi-458811-982bb3fab395.json"
