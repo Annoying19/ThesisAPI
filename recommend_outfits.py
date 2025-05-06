@@ -64,11 +64,26 @@ def create_blank_tensor():
     return tensor_img, blank_image
 
 
+from datetime import datetime, timedelta
+
 def generate_recommendations(user_id):
+    """
+    Generate, predict, and save outfit combinations based on the user's newly uploaded images only.
+    """
     print(f"🔄 Generating outfit combinations for user: {user_id}")
 
-    # 1️⃣ Fetch images and bucket by category
+    # 1️⃣ Fetch all images and newly uploaded ones (e.g., in the last 5 minutes)
     user_images = ImageModel.query.filter_by(user_id=user_id).all()
+
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=5)  # You may adjust the time window
+    new_images = ImageModel.query.filter_by(user_id=user_id).filter(ImageModel.created_at >= recent_cutoff).all()
+    new_image_paths = {img.image_path for img in new_images}
+
+    if not new_image_paths:
+        print("⚠️ No new images found. Skipping generation.")
+        return []
+
+    # Bucket by category
     category_mapping = {}
     for img in user_images:
         category_mapping.setdefault(img.category, []).append(img.image_path)
@@ -90,7 +105,7 @@ def generate_recommendations(user_id):
                 valid_combinations += list(product(*base))
             elif n > 0:
                 for opt_comb in combinations(optional_values, n):
-                    valid_combinations += list(product(* (base + list(opt_comb))))
+                    valid_combinations += list(product(*(base + list(opt_comb))))
         if allwear and shoes:
             base = [allwear, shoes]
             n = r - len(base)
@@ -98,25 +113,51 @@ def generate_recommendations(user_id):
                 valid_combinations += list(product(*base))
             elif n > 0:
                 for opt_comb in combinations(optional_values, n):
-                    valid_combinations += list(product(* (base + list(opt_comb))))
+                    valid_combinations += list(product(*(base + list(opt_comb))))
 
     if not valid_combinations:
         print("⚠️ No valid combinations found")
         return []
 
-    # 3️⃣ Filter out All-wear + Outerwear mixes
+    # 3️⃣ Filter out invalid combinations
     allwear_set = set(category_mapping.get("All-wear", []))
     outerwear_set = set(category_mapping.get("Outerwear", []))
-    filtered_combinations = [combo for combo in valid_combinations
-                              if not (any(i in allwear_set for i in combo) and any(i in outerwear_set for i in combo))]
+
+    filtered_combinations = [
+        combo for combo in valid_combinations
+        if not (any(i in allwear_set for i in combo) and any(i in outerwear_set for i in combo))
+    ]
+
+    # ✅ Only keep combinations that involve at least one newly uploaded image
+    filtered_combinations = [
+        combo for combo in filtered_combinations
+        if any(path in new_image_paths for path in combo)
+    ]
+
     if not filtered_combinations:
-        print("⚠️ All combinations with All-wear + Outerwear have been removed")
+        print("⚠️ No new combinations with recently uploaded images")
         return []
 
-    print(f"\n🧥 Generated {len(filtered_combinations)} outfit combinations:\n")
+    # 4️⃣ Avoid recomputing already existing combinations
+    existing_outfits = {
+        tuple(json.loads(row.outfit))
+        for row in GeneratedOutfit.query.filter_by(user_id=user_id).all()
+    }
 
-    # 🔄 Add tqdm progress bar for combinations
-    for combo in tqdm(filtered_combinations, desc="🔢 Predicting Outfits"):
+    filtered_combinations = [
+        combo for combo in filtered_combinations
+        if tuple(combo) not in existing_outfits
+    ]
+
+    if not filtered_combinations:
+        print("✅ All new combinations already exist. No duplicates generated.")
+        return []
+
+    # 5️⃣ Predict and Save new combinations
+    print(f"\n🧥 {len(filtered_combinations)} NEW outfit combinations to process:\n")
+
+    for idx, combo in enumerate(tqdm(filtered_combinations, desc="🧠 Predicting outfits"), start=1):
+        print(f"Outfit {idx}:")
         outfit_files = list(combo)
         category_filename_pairs = []
         for item in outfit_files:
@@ -124,25 +165,32 @@ def generate_recommendations(user_id):
             if cat_found:
                 mapped_cat = "All-body/Tops" if cat_found in ["All-body", "Tops"] else cat_found
                 category_filename_pairs.append((mapped_cat, item))
+            print(f"  - {cat_found}: {item}")
+        print("-"*30)
 
         gen = GeneratedOutfit(user_id=user_id, outfit=json.dumps(outfit_files))
         db.session.add(gen)
 
-        slot_order = ["Hats","Accessories","Sunglasses","Outerwear","All-body/Tops","Bottoms","Shoes"]
-        CATEGORY_RENAME = {"All-body":"All-body/Tops","Tops":"All-body/Tops","All-wear":"All-body/Tops"}
+        slot_order = ["Hats", "Accessories", "Sunglasses", "Outerwear", "All-body/Tops", "Bottoms", "Shoes"]
+        CATEGORY_RENAME = {"All-body": "All-body/Tops", "Tops": "All-body/Tops", "All-wear": "All-body/Tops"}
 
-        category_slot_mapping = {CATEGORY_RENAME.get(cat, cat): fname for cat, fname in category_filename_pairs}
+        category_slot_mapping = {}
+        for cat, fname in category_filename_pairs:
+            category_slot_mapping[CATEGORY_RENAME.get(cat, cat)] = fname
 
         input_batch = []
-        for slot in tqdm(slot_order, desc="🧩 Loading Slots", leave=False):
+        print("\n📌 SLOT MAPPING (Model Input Order):")
+        for s_idx, slot in enumerate(slot_order):
             if slot in category_slot_mapping:
                 blob_name = category_slot_mapping[slot]
+                print(f"[{s_idx}] {slot:<18} → 🟢 {blob_name}")
                 blob = gcs_bucket.blob(blob_name)
                 data = blob.download_as_bytes()
                 img = PILImage.open(BytesIO(data)).convert("RGB")
                 tensor_img = transform(img).unsqueeze(0).to(device)
                 input_batch.append(tensor_img)
             else:
+                print(f"[{s_idx}] {slot:<18} → ⬜ BLANK")
                 blank_tensor, _ = create_blank_tensor()
                 input_batch.append(blank_tensor)
 
@@ -165,5 +213,5 @@ def generate_recommendations(user_id):
         db.session.add(res)
 
     db.session.commit()
-    print(f"✅ Saved {len(filtered_combinations)} generated outfits and predictions for user {user_id}.")
+    print(f"✅ Saved {len(filtered_combinations)} new outfit predictions for user {user_id}.")
     return filtered_combinations
