@@ -72,10 +72,9 @@ def generate_recommendations(user_id):
     """
     print(f"🔄 Generating outfit combinations for user: {user_id}")
 
-    # 1️⃣ Fetch all images and newly uploaded ones (e.g., in the last 5 minutes)
     user_images = ImageModel.query.filter_by(user_id=user_id).all()
 
-    recent_cutoff = datetime.utcnow() - timedelta(minutes=5)  # You may adjust the time window
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
     new_images = ImageModel.query.filter_by(user_id=user_id).filter(ImageModel.created_at >= recent_cutoff).all()
     new_image_paths = {img.image_path for img in new_images}
 
@@ -83,7 +82,6 @@ def generate_recommendations(user_id):
         print("⚠️ No new images found. Skipping generation.")
         return []
 
-    # Bucket by category
     category_mapping = {}
     for img in user_images:
         category_mapping.setdefault(img.category, []).append(img.image_path)
@@ -95,7 +93,6 @@ def generate_recommendations(user_id):
     optional_categories = {k: v for k, v in category_mapping.items() if k not in ["Tops", "Bottoms", "Shoes", "All-wear"]}
     optional_values = list(optional_categories.values())
 
-    # 2️⃣ Build all raw combinations
     valid_combinations = []
     for r in range(2, 8):
         if tops and bottoms and shoes:
@@ -119,7 +116,6 @@ def generate_recommendations(user_id):
         print("⚠️ No valid combinations found")
         return []
 
-    # 3️⃣ Filter out invalid combinations
     allwear_set = set(category_mapping.get("All-wear", []))
     outerwear_set = set(category_mapping.get("Outerwear", []))
 
@@ -128,7 +124,6 @@ def generate_recommendations(user_id):
         if not (any(i in allwear_set for i in combo) and any(i in outerwear_set for i in combo))
     ]
 
-    # ✅ Only keep combinations that involve at least one newly uploaded image
     filtered_combinations = [
         combo for combo in filtered_combinations
         if any(path in new_image_paths for path in combo)
@@ -138,7 +133,6 @@ def generate_recommendations(user_id):
         print("⚠️ No new combinations with recently uploaded images")
         return []
 
-    # 4️⃣ Avoid recomputing already existing combinations
     existing_outfits = {
         tuple(json.loads(row.outfit))
         for row in GeneratedOutfit.query.filter_by(user_id=user_id).all()
@@ -153,11 +147,9 @@ def generate_recommendations(user_id):
         print("✅ All new combinations already exist. No duplicates generated.")
         return []
 
-    # 5️⃣ Predict and Save new combinations
     print(f"\n🧥 {len(filtered_combinations)} NEW outfit combinations to process:\n")
 
     for idx, combo in enumerate(tqdm(filtered_combinations, desc="🧠 Predicting outfits"), start=1):
-        print(f"Outfit {idx}:")
         outfit_files = list(combo)
         category_filename_pairs = []
         for item in outfit_files:
@@ -165,8 +157,6 @@ def generate_recommendations(user_id):
             if cat_found:
                 mapped_cat = "All-body/Tops" if cat_found in ["All-body", "Tops"] else cat_found
                 category_filename_pairs.append((mapped_cat, item))
-            print(f"  - {cat_found}: {item}")
-        print("-"*30)
 
         gen = GeneratedOutfit(user_id=user_id, outfit=json.dumps(outfit_files))
         db.session.add(gen)
@@ -179,18 +169,15 @@ def generate_recommendations(user_id):
             category_slot_mapping[CATEGORY_RENAME.get(cat, cat)] = fname
 
         input_batch = []
-        print("\n📌 SLOT MAPPING (Model Input Order):")
-        for s_idx, slot in enumerate(slot_order):
+        for slot in slot_order:
             if slot in category_slot_mapping:
                 blob_name = category_slot_mapping[slot]
-                print(f"[{s_idx}] {slot:<18} → 🟢 {blob_name}")
                 blob = gcs_bucket.blob(blob_name)
                 data = blob.download_as_bytes()
                 img = PILImage.open(BytesIO(data)).convert("RGB")
                 tensor_img = transform(img).unsqueeze(0).to(device)
                 input_batch.append(tensor_img)
             else:
-                print(f"[{s_idx}] {slot:<18} → ⬜ BLANK")
                 blank_tensor, _ = create_blank_tensor()
                 input_batch.append(blank_tensor)
 
